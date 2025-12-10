@@ -72,6 +72,8 @@ class Sidebar(QWidget):
         
         self.btn_trash = NavButton("Trash")
         self.btn_trash.setIcon(QIcon("assets/icons/trash.svg"))
+        self.btn_trash.clicked.connect(self.main_window.show_trash)
+
 
         layout.addWidget(self.btn_all)
         layout.addWidget(self.btn_fav)
@@ -109,6 +111,11 @@ class Sidebar(QWidget):
         btn_add.clicked.connect(self.add_folder)
         layout.addWidget(btn_add)
 
+        btn_add_photo = QPushButton("+ Add Photo")
+        btn_add_photo.clicked.connect(lambda: self.main_window.add_photo_to_folder())
+        layout.addWidget(btn_add_photo)
+
+
         layout.addStretch()
 
         # Load folder từ DB
@@ -122,25 +129,31 @@ class Sidebar(QWidget):
         return cur.fetchall()
 
     def refresh_folders(self):
-        # 1) clear UI
         while self.folder_container.count():
             item = self.folder_container.takeAt(0)
             w = item.widget()
             if w:
                 w.deleteLater()
 
-        # 2) load DB
         folders = self.load_folders()
         print("DEBUG FOLDERS:", folders)
 
-        # 3) add button to UI
+        # Reset danh sách button (để hỗ trợ collapse)
+        self.folder_buttons = []
+
+        # Add từng button
         for folder_id, folder_name in folders:
-            btn = NavButton(folder_name, "assets/icons/folder.svg")
+            btn = NavButton(folder_name)
+            btn.original_text = folder_name
+
+            # add icon folder
             btn.setIcon(QIcon("assets/icons/folder.png"))
+
             btn.clicked.connect(lambda checked, fid=folder_id: self.on_folder_clicked(fid))
+
+            self.folder_buttons.append(btn)
             self.folder_container.addWidget(btn)
 
-        btn.original_text = folder_name
 
     def on_folder_clicked(self, folder_id):
         self.main_window.show_folder(folder_id)

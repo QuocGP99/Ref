@@ -1,124 +1,227 @@
+# src/backend/db.py
 import sqlite3
-from pathlib import Path
 
-DB_PATH = Path("data/ref.db")
+DB_PATH = None   # GLOBAL DB path
+
+
+# ---------------------------------------------------------
+# DB PATH
+# ---------------------------------------------------------
+def set_db_path(path: str):
+    global DB_PATH
+    DB_PATH = path
+    print("DB PATH SET TO:", DB_PATH)
+
 
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
-    return conn
-
-def init_db():
-    conn = get_conn()
-    cur = conn.cursor()
-
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS photos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                file_path TEXT,
-                source TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                is_favorite TEXT DEFAULT 0,
-                is_trashed TEXT DEFAULT 0
-                )
-    """)
-
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS photo_metadata (
-               photo_id INTEGER,
-               category TEXT,
-               lens TEXT,
-               style TEXT,
-               lighting TEXT,
-               tags TEXT,
-               notes TEXT,
-               exif_iso INTEGER,
-               exif_focal_length INTEGER,
-               exif_aperture REAL,
-               exif_shutter_speed REAL,
-               FOREIGN KEY(photo_id) REFERENCES photos(id)
-            )
-    """)
-
-def search_photos(keyword=None, lens=None, style=None, lighting=None, tags=None, focal=None):
-
-    conn = get_conn()
-    cur = conn.cursor()
-
-    sql = """
-    SELECT photos.id, photos.file_path
-    FROM photos
-    JOIN photo_metadata ON photos.id = photo_metadata.photo_id
-    WHERE 1=1
-    """
-
-    params = []
-
-    if keyword:
-        sql += " AND photos.file_path LIKE ?"
-        params.append(f"%{keyword}%")
-
-    if lens:
-        sql += " AND photo_metadata.lens=?"
-        params.append(lens)
-
-    if focal:
-        sql += " AND photo_metadata.exif_focal_length=?"
-        params.append(focal)
-
-    if style:
-        sql += " AND photo_metadata.style=?"
-        params.append(style)
-
-    if lighting:
-        sql += " AND photo_metadata.lighting=?"
-        params.append(lighting)
-
-    if tags:
-        sql += " AND photo_metadata.tags LIKE ?"
-        params.append(f"%{tags}%")
-
-    cur.execute(sql, params)
-    return cur.fetchall()
-
-def migrate():
-    conn = get_conn()
-    cur = conn.cursor()
-
-    with open("src/backend/migrations/01_create_folders.sql", "r", encoding="utf-8") as f:
-        sql = f.read()
-        cur.executescript(sql)
+    if DB_PATH is None:
+        raise Exception("DB_PATH chưa được set từ project_manager!")
+    return sqlite3.connect(DB_PATH)
 
 
+# ---------------------------------------------------------
+# LOAD PHOTOS
+# ---------------------------------------------------------
 def get_photos_by_folder(folder_id):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
-        SELECT p.id, p.file_path
-        FROM photos p
-        JOIN photo_folder pf ON pf.photo_id = p.id
-        WHERE pf.folder_id = ?
-        ORDER BY p.created_at DESC
+        SELECT id, file_path
+        FROM photos
+        WHERE folder_id=? AND deleted=0
+        ORDER BY id DESC
     """, (folder_id,))
-    return cur.fetchall()
-    
+    rows = cur.fetchall()
+    conn.close()
+    return rows
 
-def assign_photo_folder(photo_id, folder_id):
-    conn = get_conn()
-    cur = conn.cursor()
-    # nếu đã có thì replace
-    cur.execute("""
-        INSERT OR REPLACE INTO photo_folder(photo_id, folder_id)
-        VALUES (?,?)
-    """, (photo_id, folder_id))
 
-def toogle_favorite(photo_id):
+def get_all_photos():
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
-        UPDATE photo_metadata
+        SELECT id, file_path
+        FROM photos
+        WHERE deleted=0
+        ORDER BY id DESC
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
+# ---------------------------------------------------------
+# FAVORITE
+# ---------------------------------------------------------
+def toggle_favorite(photo_id):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE photos
         SET favorite = CASE favorite WHEN 1 THEN 0 ELSE 1 END
         WHERE id = ?
     """, (photo_id,))
     conn.commit()
+    conn.close()
 
+
+# ---------------------------------------------------------
+# DELETE (SOFT)
+# ---------------------------------------------------------
+def soft_delete(photo_id):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("UPDATE photos SET deleted=1 WHERE id=?", (photo_id,))
+    conn.commit()
+    conn.close()
+
+
+# ---------------------------------------------------------
+# RESTORE
+# ---------------------------------------------------------
+def restore_photo(photo_id):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("UPDATE photos SET deleted=0 WHERE id=?", (photo_id,))
+    conn.commit()
+    conn.close()
+
+
+# ---------------------------------------------------------
+# DELETE PERMANENT
+# ---------------------------------------------------------
+def delete_permanently(photo_id):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM photos WHERE id=?", (photo_id,))
+    cur.execute("DELETE FROM photo_metadata WHERE photo_id=?", (photo_id,))
+    conn.commit()
+    conn.close()
+
+
+# ---------------------------------------------------------
+# MOVE PHOTO TO ANOTHER FOLDER
+# ---------------------------------------------------------
+def assign_photo_folder(photo_id, folder_id):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE photos SET folder_id=? WHERE id=?
+    """, (folder_id, photo_id))
+    conn.commit()
+    conn.close()
+
+
+# ---------------------------------------------------------
+# GET META FOR VIEWER
+# ---------------------------------------------------------
+def get_photo_meta(photo_id: int):
+    """
+    Trả về dict EXIF đơn giản cho viewer:
+    {iso, focal, aperture, shutter}
+    """
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT exif_iso, exif_focal_length, exif_aperture, exif_shutter_speed
+        FROM photo_metadata
+        WHERE photo_id=?
+    """, (photo_id,))
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        return {}
+
+    iso, focal, aperture, shutter = row
+    return {
+        "iso": iso,
+        "focal": focal,
+        "aperture": aperture,
+        "shutter": shutter,
+    }
+
+
+# ---------------------------------------------------------
+# SEARCH (EXIF ONLY — FILTER CƠ BẢN)
+# ---------------------------------------------------------
+def search_photos(keyword="", lens="", focal="", style="", lighting="", tags=""):
+    """
+    Tạm thời chỉ filter:
+    - keyword trong file_path
+    - focal_length (EXIF)
+    Các field khác chưa có trong DB → bỏ qua.
+    """
+    conn = get_conn()
+    cur = conn.cursor()
+
+    query = """
+        SELECT p.id, p.file_path
+        FROM photos p
+        LEFT JOIN photo_metadata m ON p.id = m.photo_id
+        WHERE p.deleted = 0
+    """
+
+    params = []
+
+    # Search theo tên file
+    if keyword:
+        query += " AND p.file_path LIKE ?"
+        params.append(f"%{keyword}%")
+
+    # Filter focal_length
+    if focal:
+        query += " AND m.exif_focal_length = ?"
+        params.append(float(focal))
+
+    query += " ORDER BY p.created_at DESC"
+
+    cur.execute(query, params)
+    rows = cur.fetchall()
+
+    conn.close()
+    return rows
+
+
+# ---------------------------------------------------------
+# INIT DB
+# ---------------------------------------------------------
+def init_db():
+    conn = get_conn()
+    cur = conn.cursor()
+
+    # folders table
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS folders(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            path TEXT
+        )
+    """)
+
+    # photos
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS photos(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_path TEXT,
+            source TEXT,
+            created_at TEXT,
+            folder_id INTEGER,
+            favorite INTEGER DEFAULT 0,
+            deleted INTEGER DEFAULT 0
+        )
+    """)
+
+    # photo metadata
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS photo_metadata(
+            photo_id INTEGER UNIQUE,
+            exif_iso INTEGER,
+            exif_focal_length REAL,
+            exif_aperture REAL,
+            exif_shutter_speed REAL
+        )
+    """)
+
+    conn.commit()
+    conn.close()

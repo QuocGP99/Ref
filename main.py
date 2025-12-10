@@ -1,23 +1,18 @@
 from PySide6.QtWidgets import QApplication
-from src.backend.db import init_db
+from src.ui.welcome_window import WelcomeWindow
 from src.ui.main_window import MainWindow
-from src.services.import_service import import_folder
-from src.backend.db import migrate
-import sys
-
-
-
 
 def run():
-    init_db()
-    migrate()
+    app = QApplication([])
 
-    # import_folder("data/images")
+    def open_project(folder):
+        app.win = MainWindow(folder)  
+        app.win.show()
 
-    app = QApplication(sys.argv)
-    win = MainWindow()
-    win.show()
-    sys.exit(app.exec())
+    welcome = WelcomeWindow(on_project_selected=open_project)
+    welcome.show()
+
+    app.exec()
 
 
 if __name__ == "__main__":

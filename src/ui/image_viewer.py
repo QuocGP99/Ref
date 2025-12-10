@@ -11,6 +11,7 @@ from PySide6.QtGui import QPixmap, QPainter
 from PySide6.QtCore import Qt, QRectF
 from ..backend.db import get_conn
 from .inspector_panel import InspectorPanel
+from ..backend.db import get_photo_meta 
 
 class ZoomGraphicsView(QGraphicsView):
     def __init__(self, *args, **kwargs):
@@ -111,56 +112,7 @@ class ImageViewer(QDialog):
     # DB METADATA
     # --------------------------------------------------------
     def load_photo_meta(self, photo_id):
-        conn = get_conn()
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT 
-                category,
-                lens,
-                style,
-                lighting,
-                tags,
-                exif_iso,
-                exif_focal_length,
-                exif_aperture,
-                exif_shutter_speed,
-                notes
-            FROM photo_metadata
-            WHERE photo_id=?
-            """,
-            (photo_id,),
-        )
-        row = cur.fetchone()
-
-        if not row:
-            return {}
-
-        (
-            category,
-            lens,
-            style,
-            lighting,
-            tags,
-            iso,
-            focal,
-            aperture,
-            shutter,
-            note,
-        ) = row
-
-        return {
-            "category": category,
-            "lens": lens,
-            "style": style,
-            "lighting": lighting,
-            "tags": tags,
-            "iso": iso,
-            "focal": focal,
-            "aperture": aperture,
-            "shutter": shutter,
-            "note": note,
-        }
+        return get_photo_meta(photo_id)
 
     # --------------------------------------------------------
     # SAVENOTE
