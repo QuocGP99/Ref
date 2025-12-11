@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QPushButton, QScrollArea, QFrame, QLineEdit, QInputDialog
+    QWidget, QVBoxLayout, QLabel, QPushButton, QScrollArea, QFrame, QLineEdit, QInputDialog, QMenu, QMessageBox
 )
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QAction
 from PySide6.QtCore import Qt
 from ..backend.db import get_conn
 
@@ -185,4 +185,68 @@ class Sidebar(QWidget):
                 btn.setText("")
             else:
                 btn.setText(btn.original_text)
+
+    def contextMenuEvent(self, event):
+        item = self.childAt(event.pos())
+        if not item:
+            return
+
+        # Tìm button folder được click
+        for btn in self.folder_buttons:
+            if btn.underMouse():
+                folder_name = btn.original_text
+                folder_id = self._get_folder_id_by_name(folder_name)
+                self._show_folder_context_menu(folder_id, event.globalPos())
+                return
+
+
+    def _get_folder_id_by_name(self, name):
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM folders WHERE name=?", (name,))
+        row = cur.fetchone()
+        conn.close()
+        return row[0] if row else None
+
+
+    def _show_folder_context_menu(self, folder_id, pos):
+        menu = QMenu(self)
+
+        act_rename = QAction("Rename Folder", self)
+        act_rename.triggered.connect(lambda: self._rename_folder(folder_id))
+        menu.addAction(act_rename)
+
+        act_delete = QAction("Delete Folder", self)
+        act_delete.triggered.connect(lambda: self._delete_folder(folder_id))
+        menu.addAction(act_delete)
+
+        menu.exec(pos)
+
+
+    def _rename_folder(self, folder_id):
+        from PySide6.QtWidgets import QInputDialog
+        new_name, ok = QInputDialog.getText(self, "Rename Folder", "New name:")
+        if not ok or not new_name.strip():
+            return
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("UPDATE folders SET name=? WHERE id=?", (new_name, folder_id))
+        conn.commit()
+        conn.close()
+        self.refresh_folders()
+
+
+    def _delete_folder(self, folder_id):
+        from PySide6.QtWidgets import QMessageBox
+        from ..backend.db import delete_folder
+
+        reply = QMessageBox.question(
+            self,
+            "Delete Folder",
+            "Do you really want to delete this folder and all its photos?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            delete_folder(folder_id)
+            self.refresh_folders()
 

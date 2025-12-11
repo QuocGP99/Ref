@@ -1,26 +1,34 @@
-from pathlib import Path
+# src/utils/thumbnail.py
+import os
 from PIL import Image
+from ..backend.db import DB_PATH
 
-THUMB_DIR = Path("data/thumbnails")
-THUMB_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def get_thumbnail(photo_id: int, file_path: str, size: int = 256) -> str:
+def get_thumbnail(photo_id: int, file_path: str) -> str:
     """
-    Tạo (nếu chưa có) và trả về đường dẫn thumbnail cho ảnh.
-    Thumbnail đặt tên theo photo_id để tránh trùng.
+    Tạo thumbnail dựa trên project_root/.ref/thumbnails/
+    Thumbnail = {photo_id}.jpg
     """
-    thumb_path = THUMB_DIR / f"{photo_id}_{size}.jpg"
 
-    if not thumb_path.exists():
-        try:
-            img = Image.open(file_path)
-            img = img.convert("RGB")
-            img.thumbnail((size, size))
-            img.save(thumb_path, "JPEG", quality=85)
-        except Exception as e:
-            print(f"[thumbnail] Lỗi tạo thumbnail cho {file_path}: {e}")
-            # fallback: nếu lỗi, trả về file gốc (Qt sẽ tự scale)
-            return file_path
+    if DB_PATH is None:
+        return file_path  # fallback, DB chưa init
 
-    return str(thumb_path)
+    project_root = os.path.dirname(DB_PATH)
+    thumb_dir = os.path.join(project_root, "thumbnails")
+    os.makedirs(thumb_dir, exist_ok=True)
+
+    thumb_path = os.path.join(thumb_dir, f"{photo_id}.jpg")
+
+    # nếu đã có thumbnail → dùng ngay
+    if os.path.exists(thumb_path):
+        return thumb_path
+
+    # tạo thumbnail mới
+    try:
+        img = Image.open(file_path)
+        img.thumbnail((400, 400))
+        img.save(thumb_path, "JPEG", quality=85)
+    except Exception as e:
+        print("THUMB ERROR:", e)
+        return file_path
+
+    return thumb_path

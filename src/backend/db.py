@@ -66,9 +66,9 @@ def toggle_favorite(photo_id):
 
 
 # ---------------------------------------------------------
-# DELETE (SOFT)
+# MOVE TO TRASH
 # ---------------------------------------------------------
-def soft_delete(photo_id):
+def move_to_trash(photo_id):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("UPDATE photos SET deleted=1 WHERE id=?", (photo_id,))
@@ -223,5 +223,27 @@ def init_db():
         )
     """)
 
+# ---------------------------------------------------------
+# FOLDER UTILS
+# ---------------------------------------------------------
+def folder_exists(folder_path):
+    """Kiểm tra xem folder đã tồn tại trong DB chưa."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM folders WHERE path=?", (folder_path,))
+    row = cur.fetchone()
+    conn.close()
+    return row is not None
+
+
+def delete_folder(folder_id):
+    """Xóa folder và ảnh bên trong."""
+    conn = get_conn()
+    cur = conn.cursor()
+    # Xóa ảnh thuộc folder
+    cur.execute("DELETE FROM photos WHERE folder_id=?", (folder_id,))
+    # Xóa folder
+    cur.execute("DELETE FROM folders WHERE id=?", (folder_id,))
     conn.commit()
     conn.close()
+
