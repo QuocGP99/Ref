@@ -1,4 +1,3 @@
-# src/services/import_service.py
 from datetime import datetime
 from pathlib import Path
 import exifread
@@ -11,6 +10,7 @@ SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff"}
 def import_folder(folder_path, folder_id=None):
     folder = Path(folder_path)
     if not folder.exists():
+        print(f"❌ Folder not found: {folder_path}")
         return
 
     for file in folder.iterdir():
@@ -41,7 +41,8 @@ def read_exif(image_path: Path):
     try:
         with open(image_path, "rb") as f:
             tags = exifread.process_file(f, details=False)
-    except Exception:
+    except Exception as e:
+        print(f"⚠️ EXIF read failed for {image_path}: {e}")
         return (None, None, None, None)
 
     iso = tags.get("EXIF ISOSpeedRatings")
@@ -49,7 +50,6 @@ def read_exif(image_path: Path):
     aperture = tags.get("EXIF FNumber")
     shutter = tags.get("EXIF ExposureTime")
 
-    # ---- safe conversion wrappers ----
     def to_int(value):
         try:
             return int(str(value).split()[0])
@@ -59,16 +59,11 @@ def read_exif(image_path: Path):
     def to_float(value):
         try:
             s = str(value)
-
-            # dạng rational "18/10"
             if "/" in s:
                 num, den = s.split("/")
                 return float(num) / float(den)
-
-            # dạng "F/2.8"
             if "F/" in s:
                 return float(s.replace("F/", ""))
-
             return float(s)
         except Exception:
             return None

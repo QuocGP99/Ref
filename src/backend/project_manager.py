@@ -1,38 +1,46 @@
-# src/backend/project_manager.py
-
 import os
-from .db import set_db_path, init_db
+from src.backend.database_manager import init_db, get_session, get_engine_url
+from src.backend.database_manager import Folder
+
+_current_project_path = None
+
+
+def set_current_project_path(path: str):
+    global _current_project_path
+    _current_project_path = path
+
+
+def get_current_project_path() -> str:
+    global _current_project_path
+    return _current_project_path
+
 
 def init_or_load_project(project_folder: str):
-    """
-    Tự động phát hiện project mới hoặc cũ.
-    Nếu có .ref/ref.db → load; nếu chưa có → init mới.
-    """
-    ref_folder = os.path.join(project_folder, ".ref")
-    db_path = os.path.join(ref_folder, "ref.db")
+    """Tạo mới hoặc tải project MySQL."""
+    db_url = get_engine_url()
+    print(f"🔗 Using MySQL Database for project: {project_folder}")
+    init_db(db_url)
 
-    os.makedirs(ref_folder, exist_ok=True)
+    session = get_session()
+    folder_name = os.path.basename(project_folder)
+    existing = session.query(Folder).filter_by(name=folder_name).first()
 
-    if os.path.exists(db_path):
-        # Project cũ → chỉ load lại DB path
-        print("Loading existing project database:", db_path)
-        set_db_path(db_path)
+    if not existing:
+        new_folder = Folder(name=folder_name, path=project_folder)
+        session.add(new_folder)
+        session.commit()
+        print(f"✅ Folder added: {folder_name}")
     else:
-        print("Initializing new project database:", db_path)
-        set_db_path(db_path)
-        init_db()
+        print(f"📂 Folder already exists: {folder_name}")
 
-    return ref_folder, db_path
+    set_current_project_path(project_folder)
+    return project_folder, "MySQL database active"
+
 
 def load_project(project_folder: str):
-    """
-    Khi mở project có sẵn
-    """
-    ref_folder = os.path.join(project_folder, ".ref")
-    db_path = os.path.join(ref_folder, "ref.db")
-
-    if not os.path.exists(db_path):
-        raise Exception("Project chưa được init!")
-
-    set_db_path(db_path)
-    return ref_folder, db_path
+    """Khi mở project đã có."""
+    db_url = get_engine_url()
+    print(f"📂 Loading MySQL project: {project_folder}")
+    init_db(db_url)
+    set_current_project_path(project_folder)
+    return project_folder, "MySQL Database Active"
